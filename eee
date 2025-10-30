@@ -1,18 +1,116 @@
-package com.rwtool.repository;
+package com.rwtool.model;
 
-import com.rwtool.model.User;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
-import java.util.List;
-import java.util.Optional;
+@Entity
+@Table(name = "notifications")
+public class Notification {
 
-@Repository
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    Optional<User> findByEmail(String email);
-    
-    Boolean existsByEmail(String email);
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    List<User> findByRole(User.Role role);
+    @Column(nullable = false)
+    private String message;
+
+    @Column(name = "is_read", nullable = false)
+    private boolean isRead = false;
+
+    @Column(nullable = false)
+    private LocalDateTime timestamp;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore
+    private User user;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notification_type")
+    private NotificationType notificationType;
+
+    public enum NotificationType {
+        SUBSCRIPTION_REQUEST,
+        FILE_PATH_UPDATE
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        timestamp = LocalDateTime.now();
+    }
+
+    // Default constructor
+    public Notification() {
+    }
+
+    // Parameterized constructor
+    public Notification(Long id, String message, boolean isRead, LocalDateTime timestamp, User user, NotificationType notificationType) {
+        this.id = id;
+        this.message = message;
+        this.isRead = isRead;
+        this.timestamp = timestamp;
+        this.user = user;
+        this.notificationType = notificationType;
+    }
+
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public boolean isRead() {
+        return isRead;
+    }
+
+    public void setRead(boolean read) {
+        isRead = read;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public NotificationType getNotificationType() {
+        return notificationType;
+    }
+
+    public void setNotificationType(NotificationType notificationType) {
+        this.notificationType = notificationType;
+    }
+
+    @Override
+    public String toString() {
+        return "Notification{" +
+                "id=" + id +
+                ", message='" + message + '\'' +
+                ", isRead=" + isRead +
+                ", timestamp=" + timestamp +
+                ", notificationType=" + notificationType +
+                '}';
+    }
 }
