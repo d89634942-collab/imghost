@@ -1,116 +1,105 @@
-package com.rwtool.model;
+package com.rwtool.service;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import com.rwtool.dto.PageResponse;
+import com.rwtool.dto.PathConfigRequest;
+import com.rwtool.model.Notification;
+import com.rwtool.model.PathConfig;
+import com.rwtool.model.User;
+import com.rwtool.repository.PathConfigRepository;
+import com.rwtool.service.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-@Entity
-@Table(name = "notifications")
-public class Notification {
+import java.util.List;
+import java.util.Optional;
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@Service
+public class PathConfigService {
+    private final PathConfigRepository repository;
+    private final NotificationService notificationService;
+    private final UserService userService;
 
-    @Column(nullable = false)
-    private String message;
 
-    @Column(name = "is_read", nullable = false)
-    private boolean isRead = false;
-
-    @Column(nullable = false)
-    private LocalDateTime timestamp;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    @JsonIgnore
-    private User user;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "notification_type")
-    private NotificationType notificationType;
-
-    public enum NotificationType {
-        SUBSCRIPTION_REQUEST,
-        FILE_PATH_UPDATE
+    public PathConfigService(PathConfigRepository repository, NotificationService notificationService, UserService userService) {
+        this.repository = repository;
+        this.notificationService = notificationService;
+        this.userService = userService;
     }
 
-    @PrePersist
-    protected void onCreate() {
-        timestamp = LocalDateTime.now();
+    public PageResponse<PathConfig> list(String search, int page, int pageSize) {
+        Pageable pageable = PageRequest.of(Math.max(page - 1, 0), pageSize);
+        Page<PathConfig> result = (search == null || search.isBlank())
+                ? repository.findAll(pageable)
+                : repository.search(search, pageable);
+        return new PageResponse<>(result.getContent(), result.getTotalElements(), page, pageSize);
     }
 
-    // Default constructor
-    public Notification() {
+    @Transactional
+    public PathConfig create(PathConfigRequest req) {
+        validate(req);
+        if (repository.existsByPrefixIgnoreCase(req.getPrefix())) {
+            throw new IllegalArgumentException("Prefix already exists");
+        }
+        PathConfig pc = new PathConfig();
+        pc.setPrefix(req.getPrefix().trim());
+        pc.setSourcePath(req.getSourcePath().trim());
+        pc.setOutputPath(req.getOutputPath().trim());
+        pc.setStatus(req.getStatus());
+        PathConfig savedPathConfig = repository.save(pc);
+
+        // Create notification for all admin users
+        List<User> admins = userService.getUsersByRole("ADMIN");
+        String message = String.format("A new file path with prefix '%s' was created.",
+                savedPathConfig.getPrefix());
+
+        for (User admin : admins) {
+            notificationService.createNotification(admin, message, Notification.NotificationType.FILE_PATH_UPDATE);
+        }
+
+
+        return savedPathConfig;
     }
 
-    // Parameterized constructor
-    public Notification(Long id, String message, boolean isRead, LocalDateTime timestamp, User user, NotificationType notificationType) {
-        this.id = id;
-        this.message = message;
-        this.isRead = isRead;
-        this.timestamp = timestamp;
-        this.user = user;
-        this.notificationType = notificationType;
+    @Transactional
+    public PathConfig update(Long id, PathConfigRequest req) {
+        validate(req);
+        PathConfig existing = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Not found"));
+        if (!existing.getPrefix().equalsIgnoreCase(req.getPrefix()) && repository.existsByPrefixIgnoreCase(req.getPrefix())) {
+            throw  new IllegalArgumentException("Prefix already exists");
+        }
+        existing.setPrefix(req.getPrefix().trim());
+        existing.setSourcePath(req.getSourcePath().trim());
+        existing.setOutputPath(req.getOutputPath().trim());
+        existing.setStatus(req.getStatus());
+        return repository.save(existing);
     }
 
-    // Getters and Setters
-    public Long getId() {
-        return id;
+    public Optional<PathConfig> get(Long id) {
+        return repository.findById(id);
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    @Transactional
+    public void delete(Long id) {
+        repository.deleteById(id);
     }
 
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public boolean isRead() {
-        return isRead;
-    }
-
-    public void setRead(boolean read) {
-        isRead = read;
-    }
-
-    public LocalDateTime getTimestamp() {
-        return timestamp;
-    }
-
-    public void setTimestamp(LocalDateTime timestamp) {
-        this.timestamp = timestamp;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
-    }
-
-    public NotificationType getNotificationType() {
-        return notificationType;
-    }
-
-    public void setNotificationType(NotificationType notificationType) {
-        this.notificationType = notificationType;
-    }
-
-    @Override
-    public String toString() {
-        return "Notification{" +
-                "id=" + id +
-                ", message='" + message + '\'' +
-                ", isRead=" + isRead +
-                ", timestamp=" + timestamp +
-                ", notificationType=" + notificationType +
-                '}';
+    private void validate(PathConfigRequest req) {
+        if (req == null) throw new IllegalArgumentException("Request is null");
+        if (req.getPrefix() == null || req.getPrefix().trim().isEmpty())
+            throw new IllegalArgumentException("prefix is required");
+        if (req.getSourcePath() == null || req.getSourcePath().trim().isEmpty())
+            throw new IllegalArgumentException("sourcePath is required");
+        if (req.getOutputPath() == null || req.getOutputPath().trim().isEmpty())
+            throw new IllegalArgumentException("outputPath is required");
+        if (req.getStatus() == null || req.getStatus().trim().isEmpty())
+            throw new IllegalArgumentException("status is required");
+        String s = req.getStatus().trim();
+        if (!"Active".equals(s) && !"Inactive".equals(s))
+            throw new IllegalArgumentException("status must be Active or Inactive");
     }
 }
