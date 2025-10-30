@@ -1,24 +1,152 @@
-package com.rwtool.service;
+import React, { useState, useEffect } from 'react';
+import { Bell, X, UserPlus, FileText } from 'lucide-react';
+import './AdminNotification.css';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../../../services/notificationService';
 
-import com.rwtool.model.User;
-import com.rwtool.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+const AdminNotification = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [notifications, setNotifications] = useState([]);
 
-import java.util.List;
+    useEffect(() => {
+        if (isOpen) {
+            fetchNotifications();
+        }
+    }, [isOpen]);
 
-@Service
-public class UserService {
+    const fetchNotifications = async () => {
+        try {
+            const data = await getNotifications();
+            setNotifications(data);
+        } catch (error) {
+            console.error("Failed to fetch notifications", error);
+        }
+    };
 
-    @Autowired
-    private UserRepository userRepository;
+    const unreadCount = notifications.filter(n => !n.read).length;
 
-    public User getUserByUsername(String username) {
-        return userRepository.findByEmail(username)
-                .orElseThrow(() -> new RuntimeException("User not found with username: " + username));
-    }
+    const handleMarkAsRead = async (id) => {
+        try {
+            await markNotificationAsRead(id);
+            setNotifications(notifications.map(n =>
+                n.id === id ? { ...n, read: true } : n
+            ));
+        } catch (error) {
+            console.error("Failed to mark notification as read", error);
+        }
+    };
 
-    public List<User> getUsersByRole(String role) {
-        return userRepository.findByRole(User.Role.valueOf(role.toUpperCase()));
-    }
-}
+    const handleMarkAllAsRead = async () => {
+        try {
+            await markAllNotificationsAsRead();
+            setNotifications(notifications.map(n => ({ ...n, read: true })));
+        } catch (error) {
+            console.error("Failed to mark all notifications as read", error);
+        }
+    };
+
+    const removeNotification = (id) => {
+        setNotifications(notifications.filter(n => n.id !== id));
+    };
+
+    const getNotificationIcon = (type) => {
+        switch (type) {
+            case 'SUBSCRIPTION_REQUEST':
+                return UserPlus;
+            case 'FILE_PATH_UPDATE':
+                return FileText;
+            default:
+                return Bell;
+        }
+    };
+    
+    const timeAgo = (timestamp) => {
+        const now = new Date();
+        const notificationTime = new Date(timestamp);
+        const differenceInSeconds = Math.floor((now - notificationTime) / 1000);
+
+        const intervals = {
+            year: 31536000,
+            month: 2592000,
+            day: 86400,
+            hour: 3600,
+            minute: 60
+        };
+
+        if (differenceInSeconds < 60) return `${differenceInSeconds} seconds ago`;
+        if (differenceInSeconds < intervals.hour) return `${Math.floor(differenceInSeconds / intervals.minute)} minutes ago`;
+        if (differenceInSeconds < intervals.day) return `${Math.floor(differenceInSeconds / intervals.hour)} hours ago`;
+        if (differenceInSeconds < intervals.month) return `${Math.floor(differenceInSeconds / intervals.day)} days ago`;
+        if (differenceInSeconds < intervals.year) return `${Math.floor(differenceInSeconds / intervals.month)} months ago`;
+        return `${Math.floor(differenceInSeconds / intervals.year)} years ago`;
+    };
+
+    return (
+        <div className="admin-notif-container">
+            <div className="admin-notif-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                    <span className="admin-notif-badge">{unreadCount}</span>
+                )}
+            </div>
+
+            {isOpen && (
+                <div className="admin-notif-dropdown">
+                    <div className="admin-notif-header">
+                        <h5 className="admin-notif-title">Notifications</h5>
+                        {unreadCount > 0 && (
+                            <button className="admin-mark-all" onClick={handleMarkAllAsRead}>
+                                Mark all read
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="admin-notif-list">
+                        {notifications.length === 0 ? (
+                            <div className="admin-no-notif">
+                                <Bell size={40} />
+                                <p>No notifications</p>
+                            </div>
+                        ) : (
+                            notifications.map(notification => {
+                                const Icon = getNotificationIcon(notification.notificationType);
+                                return (
+                                    <div
+                                        key={notification.id}
+                                        className={`admin-notif-item ${!notification.read ? 'unread' : ''}`}
+                                        onClick={() => handleMarkAsRead(notification.id)}
+                                    >
+                                        <div className={`admin-notif-icon ${notification.notificationType}`}>
+                                            <Icon size={18} />
+                                        </div>
+                                        <div className="admin-notif-content">
+                                            <h6>{notification.notificationType.replace(/_/g, ' ')}</h6>
+                                            <p>{notification.message}</p>
+                                            <span className="admin-notif-time">{timeAgo(notification.timestamp)}</span>
+                                        </div>
+                                        <button
+                                            className="admin-notif-close"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeNotification(notification.id);
+                                            }}
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {notifications.length > 0 && (
+                        <div className="admin-notif-footer">
+                            <a href="#" className="admin-view-all">View All Activity</a>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default AdminNotification;
