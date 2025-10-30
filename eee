@@ -1,0 +1,24 @@
+package com.rwtool.service;
+
+import com.rwtool.model.User;
+import com.rwtool.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class UserService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    public User getUserByUsername(String username) {
+        return userRepository.findByEmail(username)
+                .orElseThrow(() -> new RuntimeException("User not found with username: " + username));
+    }
+
+    public List<User> getUsersByRole(String role) {
+        return userRepository.findByRole(User.Role.valueOf(role.toUpperCase()));
+    }
+}
